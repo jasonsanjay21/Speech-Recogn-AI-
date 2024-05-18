@@ -24,9 +24,8 @@ keep_dropout_rate = 0.95
 keep_dropout_rate = 0.95
 relu_clip = 20
 
-n_input = 26  # 计算美尔倒谱系数的个数
-n_context = 9  # 对于每个时间点，要包含上下文样本的个数
-batch_size = 8
+n_input = 26  
+n_context = 9 batch_size = 8
 
 
 class BiRNN(object):
@@ -39,17 +38,17 @@ class BiRNN(object):
         self.word_num_map = word_num_map
 
     def add_placeholders(self):
-        # the batch_size and max_stepsize每步都是变长的。
+        # the batch_size and max_stepsize。
         self.input_tensor = tf.placeholder(tf.float32, [None, None, n_input + (2 * n_input * n_context)],
-                                           name='input')  # 语音log filter bank or MFCC features
+                                           name='input')  
 
-        self.text = tf.sparse_placeholder(tf.int32, name='text')  # 文本
-        self.seq_length = tf.placeholder(tf.int32, [None], name='seq_length')  # 序列长
+        self.text = tf.sparse_placeholder(tf.int32, name='text')  
+        self.seq_length = tf.placeholder(tf.int32, [None], name='seq_length')  
         self.keep_dropout = tf.placeholder(tf.float32)
 
     def bi_rnn_layer(self):
         '''
-        建立网络模型
+       
         :param batch_x:
         :param seq_length:
         :param n_input:
@@ -65,9 +64,8 @@ class BiRNN(object):
         # batch_x_shape: [batch_size, n_steps, n_input + 2*n_input*n_context]
         batch_x_shape = tf.shape(batch_x)
 
-        # 将输入转成时间序列优先
+       
         batch_x = tf.transpose(batch_x, [1, 0, 2])
-        # 再转成2维传入第一层
         batch_x = tf.reshape(batch_x,
                              [-1,
                               n_input + 2 * n_input * n_context])  # (n_steps*batch_size, n_input + 2*n_input*n_context)
@@ -94,21 +92,15 @@ class BiRNN(object):
             layer_3 = tf.minimum(tf.nn.relu(tf.add(tf.matmul(layer_2, h3), b3)), relu_clip)
             layer_3 = tf.nn.dropout(layer_3, keep_dropout)
 
-        # 双向rnn
         with tf.name_scope('birnn'):
-            # 前向
             lstm_fw_cell = tf.contrib.rnn.BasicLSTMCell(n_cell_dim, forget_bias=1.0, state_is_tuple=True)
             lstm_fw_cell = tf.contrib.rnn.DropoutWrapper(lstm_fw_cell,
                                                          input_keep_prob=keep_dropout)
-            # 后向
             lstm_bw_cell = tf.contrib.rnn.BasicLSTMCell(n_cell_dim, forget_bias=1.0, state_is_tuple=True)
             lstm_bw_cell = tf.contrib.rnn.DropoutWrapper(lstm_bw_cell,
                                                          input_keep_prob=keep_dropout)
 
-            # `layer_3`  `[n_steps, batch_size, 2*n_cell_dim]`
-            # print(batch_x_shape[0])
-            # print(batch_x_shape[1])
-            # print(batch_x_shape[2])
+          
             layer_3 = tf.reshape(layer_3, [-1, batch_x_shape[0], n_hidden_3])
 
             outputs, output_states = tf.nn.bidirectional_dynamic_rnn(cell_fw=lstm_fw_cell,
@@ -118,7 +110,7 @@ class BiRNN(object):
                                                                      time_major=True,
                                                                      sequence_length=seq_length)
 
-            # 连接正反向结果[n_steps, batch_size, 2*n_cell_dim]
+           [n_steps, batch_size, 2*n_cell_dim]
             outputs = tf.concat(outputs, 2)
             # to a single tensor of shape [n_steps*batch_size, 2*n_cell_dim]
             outputs = tf.reshape(outputs, [-1, 2 * n_cell_dim])
@@ -131,28 +123,26 @@ class BiRNN(object):
             layer_5 = tf.nn.dropout(layer_5, keep_dropout)
 
         with tf.name_scope('layer6'):
-            # 全连接层用于softmax分类
+
             b6 = self.variable_on_device('b6', [n_character], tf.random_normal_initializer(stddev=b_stddev))
             h6 = self.variable_on_device('h6', [n_hidden_5, n_character], tf.random_normal_initializer(stddev=h_stddev))
             layer_6 = tf.add(tf.matmul(layer_5, h6), b6)
 
-        # 将2维[n_steps*batch_size, n_character]转成3维 time-major [n_steps, batch_size, n_character].
+       
         layer_6 = tf.reshape(layer_6, [-1, batch_x_shape[0], n_character])
 
-        # Output shape: [n_steps, batch_size, n_character]
         self.logits = layer_6
 
     def loss(self):
         """
-        定义loss
+loss
         :return:
         """
-        # 调用ctc loss
-        with tf.name_scope('loss'): #损失
+        with tf.name_scope('loss'): 
             self.avg_loss = tf.reduce_mean(ctc_ops.ctc_loss(self.text, self.logits, self.seq_length))
             tf.summary.scalar('loss',self.avg_loss)
-        # [optimizer]
-        with tf.name_scope('train'): #训练过程
+        
+        with tf.name_scope('train'): 
             self.optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(self.avg_loss)
 
         with tf.name_scope("decode"):
@@ -160,13 +150,11 @@ class BiRNN(object):
 
         with tf.name_scope("accuracy"):
             self.distance = tf.edit_distance(tf.cast(self.decoded[0], tf.int32), self.text)
-            # 计算label error rate (accuracy)
             self.label_err = tf.reduce_mean(self.distance, name='label_error_rate')
             tf.summary.scalar('accuracy', self.label_err)
 
     def get_feed_dict(self, dropout=None):
         """
-        定义变量
         :param dropout:
         :return:
         """
@@ -184,11 +172,11 @@ class BiRNN(object):
     def init_session(self):
         self.savedir = self.conf.get("FILE_DATA").savedir
         self.saver = tf.train.Saver(max_to_keep=1)  # 生成saver
-        # create the session
+       
         gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=0.7)
         self.sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
-        # sess = tf.Session()
-        # 没有模型的话，就重新初始化
+       
+       
         self.sess.run(tf.global_variables_initializer())
 
         ckpt = tf.train.latest_checkpoint(self.savedir)
@@ -208,18 +196,18 @@ class BiRNN(object):
     def train(self):
         epochs = 120
 
-        # 准备运行训练步骤
+      
         section = '\n{0:=^40}\n'
         print(section.format('开始训练'))
 
         train_start = time.time()
-        for epoch in range(epochs):  # 样本集迭代次数
+        for epoch in range(epochs):  
             epoch_start = time.time()
             if epoch < self.startepo:
                 continue
 
-            print("第：", epoch, " 次迭代，一共要迭代 ", epochs, "次")
-            #######################run batch####
+    
+         
             n_batches_epoch = int(np.ceil(len(self.text_labels) / batch_size))
             print("在本次迭代中一共循环： ", n_batches_epoch, "每次取：", batch_size)
 
@@ -228,7 +216,7 @@ class BiRNN(object):
             next_idx = 0
 
             for batch in range(n_batches_epoch):  # 一次batch_size，取多少次
-                # 取数据
+               
                 # temp_next_idx, temp_audio_features, temp_audio_features_len, temp_sparse_labels
                 next_idx, self.audio_features, self.audio_features_len, self.sparse_labels, wav_files = utils.next_batch(
                     next_idx,
@@ -285,8 +273,8 @@ class BiRNN(object):
                self.wav_files,
                self.word_num_map)
 
-           print('读入语音文件: ', wav_files[0])
-           print('开始识别语音数据......')
+           print( wav_files[0])
+           print('')
 
            d, train_ler = self.sess.run([self.decoded[0], self.label_err], feed_dict=self.get_feed_dict(dropout=1.0))
            dense_decoded = tf.sparse_tensor_to_dense(d, default_value=-1).eval(session=self.sess)
@@ -295,15 +283,15 @@ class BiRNN(object):
            for orig, decoded_array in zip(dense_labels, dense_decoded):
                # 转成string
                decoded_str = utils.trans_array_to_text_ch(decoded_array, self.words)
-               print('语音原始文本: {}'.format(orig))
-               print('识别出来的文本:  {}'.format(decoded_str))
+               print('{}'.format(orig))
+               print( ' {}'.format(decoded_str))
                break
 
         self.sess.close()
 
     def test_target_wav_file(self, wav_files, txt_labels):
-        print('读入语音文件: ', wav_files[0])
-        print('开始识别语音数据......')
+        print(wav_files[0])
+
 
         self.audio_features, self.audio_features_len, text_vector, text_vector_len = utils.get_audio_mfcc_features(
             None,
@@ -316,8 +304,8 @@ class BiRNN(object):
         d, train_ler = self.sess.run([self.decoded[0], self.label_err], feed_dict=self.get_feed_dict(dropout=1.0))
         dense_decoded = tf.sparse_tensor_to_dense(d, default_value=-1).eval(session=self.sess)
         decoded_str = utils.trans_array_to_text_ch(dense_decoded[0], self.words)
-        print('语音原始文本: {}'.format(txt_labels[0]))
-        print('识别出来的文本:  {}'.format(decoded_str))
+        print('{}'.format(txt_labels[0]))
+        print(  '{}'.format(decoded_str))
 
         self.sess.close()
 
